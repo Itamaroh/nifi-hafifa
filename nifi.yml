@@ -1,0 +1,125 @@
+apiVersion: v1
+kind: Service             
+apiVersion: v1            
+metadata:                 
+  name: nifi-service
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"     
+spec:
+  type: LoadBalancer
+  externalIPs:
+  - 20.101.79.214              
+  selector:               
+    app: nifi            
+  ports:                  
+  - protocol: TCP         
+    targetPort: 8080     
+    port: 8080              
+    name: ui
+    nodePort: 31234           
+  - protocol: TCP         
+    targetPort: 9088     
+    port: 9088              
+    name: node-protocol-port            
+  - protocol: TCP         
+    targetPort: 8888     
+    port: 8888
+    nodePort: 31111              
+    name: s2s     
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: nifi
+  namespace: default
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: nifi
+  template:
+    metadata:
+      labels:
+        app: nifi
+    spec:
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      volumes:
+        - name: nifi-data
+          persistentVolumeClaim:
+            claimName: nifi-pv-claim 
+      containers:
+      - name: nifi-container
+        image: apache/nifi:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 22
+          name: ssh
+        resources:
+          requests:
+            cpu: "0.5"
+            memory: "1Gi"
+          limits:
+            cpu: "1"
+        env:
+        - name: VERSION
+          value: "1.9"
+        - name: NIFI_CLUSTER_IS_NODE
+          value: "true"
+        - name: NIFI_CLUSTER_NODE_PROTOCOL_PORT
+          value: "9088"
+        - name: NIFI_SENSITIVE_PROPS_KEY
+          value: "qwertyuiopas"
+        - name: NIFI_WEB_HTTP_PORT
+          value: "8080"
+        - name: NIFI_WEB_HTTP_HOST
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: NIFI_CLUSTER_NODE_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: NIFI_ZK_CONNECT_STRING
+          value: "zookeeper-service:2181"
+        - name: NODE_IDENTITY
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NIFI_ELECTION_MAX_WAIT
+          value: "1 min"
+        volumeMounts:
+          - mountPath: "/opt/nifi/nifi-current/extensions"
+            name: nifi-data
+            subPath: nifi-ext
+          - mountPath: "/opt/nifi/nifi-current/data"
+            name: nifi-data
+            subPath: nifi-out
+      initContainers:
+      - name: take-extensions-dir-ownership
+        image: alpine:3
+        command:
+        - chown
+        - -R
+        - 1000:1000
+        - /opt/nifi/nifi-current/extensions
+        volumeMounts:
+          - mountPath: "/opt/nifi/nifi-current/extensions"
+            name: nifi-data
+            subPath: nifi-ext
+      - name: take-data-dir-ownership
+        image: alpine:3
+        command:
+        - chown
+        - -R
+        - 1000:1000
+        - /opt/nifi/nifi-current/data
+        volumeMounts:
+          - mountPath: "/opt/nifi/nifi-current/data"
+            name: nifi-data
+            subPath: nifi-out
