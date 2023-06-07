@@ -1,0 +1,11 @@
+winlogbeat.event_logs:
+  - name: Microsoft-Windows-Sysmon/Operational
+
+output.logstash:
+  compression_level: 1
+  bulk_max_size: 20
+  timeout: 30
+  # The Logstash hosts
+  hosts: ["20.101.79.214:31111"]
+
+
